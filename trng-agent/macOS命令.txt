@@ -1,0 +1,2 @@
+cd /Users/ella/Doubao/chats/2026-09-07/new-chat/trng-agent
+python3 server.py

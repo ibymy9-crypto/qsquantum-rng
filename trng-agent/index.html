@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>启熵量子 · 真随机数生成器</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --accent: #2F6FA7; --accent-soft: rgba(47,111,167,0.10);
+    --bg: #F4F3EE; --card: #FFFFFF; --text: #1A1B1C; --sub: #6B7280;
+    --border: #E4E3DD; --ok: #52C41A; --err: #D64550;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'PingFang SC', 'Segoe UI', Roboto, Arial, sans-serif; line-height: 1.5; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  header h1 { font-size: 20px; font-weight: 700; }
+  header .sub { font-size: 12.5px; color: var(--sub); margin-top: 2px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #C0C0C0; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--err); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tab { flex: 1; text-align: center; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); cursor: pointer; font-size: 14px; color: var(--sub); transition: all .15s; }
+  .tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .grid { display: flex; flex-wrap: wrap; gap: 12px; }
+  .field { flex: 1 1 140px; min-width: 0; }
+  .field label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+  .field input, .field select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13.5px; background: #FBFBF9; color: var(--text); outline: none; }
+  .field input:focus, .field select:focus { border-color: var(--accent); background: #fff; }
+  .btn { padding: 10px 22px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #275C8C; }
+  .btn-ghost { background: var(--card); border: 1px solid var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .stat-cards { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .stat { flex: 1 1 90px; min-width: 0; background: linear-gradient(135deg, rgba(139,200,234,0.14), rgba(139,200,234,0.28)); border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: 11.5px; color: var(--sub); }
+  .stat .v { font-size: 17px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .chart { width: 100%; height: 320px; }
+  .charts { display: flex; flex-wrap: wrap; gap: 12px; }
+  .charts .panel { flex: 1 1 320px; min-width: 0; }
+  .charts .panel h3 { font-size: 13px; color: var(--sub); margin-bottom: 6px; font-weight: 500; }
+  .keys-list { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .key-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; }
+  .key-row:last-child { border-bottom: none; }
+  .copy { flex-shrink: 0; font-size: 11.5px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; color: var(--sub); }
+  .copy:hover { color: var(--accent); border-color: var(--accent); }
+  .msg { font-size: 13px; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; display: none; }
+  .msg.err { display: block; background: rgba(214,69,80,0.08); border: 1px solid rgba(214,69,80,0.3); color: var(--err); }
+  .msg.ok { display: block; background: rgba(82,196,26,0.08); border: 1px solid rgba(82,196,26,0.3); color: #3D8B14; }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 10px; }
+  .entropy { font-size: 12px; color: var(--sub); margin-top: 8px; }
+  .export-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .loading { text-align: center; color: var(--sub); font-size: 13px; padding: 24px 0; }
+  @media (max-width: 520px) { .chart { height: 260px; } .field { flex-basis: 100%; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>启熵量子 · 真随机数生成器</h1>
+      <div class="sub">物理熵源 · 四项质量检测 · 不使用软件伪随机数</div>
+    </div>
+    <div class="status" id="status"><span class="dot" id="dot"></span><span id="statusText">检测中…</span></div>
+  </header>
+
+  <div class="msg" id="msg"></div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" data-mode="numbers" onclick="switchMode('numbers')">生成随机数字</div>
+      <div class="tab" data-mode="keys" onclick="switchMode('keys')">生成 HEX 密钥</div>
+    </div>
+
+    <div id="form-numbers">
+      <div class="grid">
+        <div class="field">
+          <label>分布类型</label>
+          <select id="dist">
+            <option value="normal" selected>正态分布</option>
+            <option value="uniform">均匀分布</option>
+            <option value="exponential">指数分布（截断）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>数量</label>
+          <input id="count" type="number" min="1" max="100000" value="100">
+        </div>
+        <div class="field">
+          <label>下限</label>
+          <input id="lo" type="number" step="any" value="100">
+        </div>
+        <div class="field">
+          <label>上限</label>
+          <input id="hi" type="number" step="any" value="200">
+        </div>
+        <div class="field">
+          <label>小数位数</label>
+          <input id="decimals" type="number" min="0" max="10" value="2">
+        </div>
+        <div class="field" id="sigma-field">
+          <label>σ（标准差，留空自动）</label>
+          <input id="sigma" type="number" step="any" placeholder="自动 = 区间/6">
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" id="btnGenNum" onclick="generateNumbers()">从物理熵源生成</button>
+        <button class="btn btn-ghost" onclick="clearAll()">清空</button>
+      </div>
+    </div>
+
+    <div id="form-keys" style="display:none;">
+      <div class="grid">
+        <div class="field">
+          <label>密钥数量</label>
+          <input id="key-count" type="number" min="1" max="100000" value="1">
+        </div>
+        <div class="field">
+          <label>密钥长度（字节，1 字节 = 2 个 HEX 字符）</label>
+          <input id="key-bytes" type="number" min="1" max="4096" value="32">
+        </div>
+      </div>
+      <div class="hint">32 字节 = 256 位 = 64 个 HEX 字符（AES-256 推荐长度）。生成后自动执行四项随机数质量检测，不通过则停止输出。</div>
+      <div class="row">
+        <button class="btn btn-primary" id="btnGenKey" onclick="generateKeys()">从物理熵源生成</button>
+        <button class="btn btn-ghost" onclick="clearAll()">清空</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="result" style="display:none;">
+    <div class="card">
+      <h2>生成结果</h2>
+      <div class="stat-cards" id="statCards"></div>
+      <div id="qualitySection" style="display:none; margin-bottom:14px;">
+        <h3 style="font-size:13px;color:var(--sub);margin-bottom:6px;font-weight:500;">随机数质量检测（四项）</h3>
+        <div class="stat-cards" id="qualityCards"></div>
+      </div>
+      <div id="numCharts">
+        <div class="charts">
+          <div class="panel">
+            <h3>分布直方图（含正态拟合曲线）</h3>
+            <div class="chart" id="histChart"></div>
+          </div>
+          <div class="panel">
+            <h3>正态 QQ 图（验证分布质量）</h3>
+            <div class="chart" id="qqChart"></div>
+          </div>
+        </div>
+      </div>
+      <div id="keyResult" style="display:none;">
+        <div class="keys-list" id="keyList"></div>
+      </div>
+      <div class="entropy" id="entropyInfo"></div>
+      <div class="export-group" id="exportGroup">
+        <button class="btn btn-ghost" onclick="doExport('csv')">导出 CSV</button>
+        <button class="btn btn-ghost" onclick="doExport('json')">导出 JSON</button>
+        <button class="btn btn-ghost" onclick="doExport('txt')">导出 TXT</button>
+        <button class="btn btn-ghost" id="btnXlsx" onclick="doExport('xlsx')">导出 Excel</button>
+        <button class="btn btn-ghost" id="btnPng" onclick="doExport('png')">直方图 PNG</button>
+        <button class="btn btn-ghost" id="btnQq" onclick="doExport('qq')">QQ 图 PNG</button>
+        <button class="btn btn-ghost" id="btnBin" onclick="doExport('bin')" style="display:none;">导出 BIN</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var histChart = null, qqChart = null;
+  var echartsOk = (typeof echarts !== "undefined");
+
+  function checkStatus() {
+    fetch("/api/status").then(function (r) { return r.json(); }).then(function (d) {
+      var dot = document.getElementById("dot");
+      var txt = document.getElementById("statusText");
+      if (d.ok) { dot.className = "dot on"; txt.textContent = "设备在线 · " + d.device; }
+      else { dot.className = "dot off"; txt.textContent = "设备离线"; }
+    }).catch(function () {
+      document.getElementById("dot").className = "dot off";
+      document.getElementById("statusText").textContent = "服务未启动";
+    });
+  }
+  checkStatus();
+
+  function showMsg(type, text) {
+    var m = document.getElementById("msg");
+    m.className = "msg " + type;
+    m.textContent = text;
+    setTimeout(function () { m.style.display = "none"; }, 8000);
+  }
+
+  window.switchMode = function (m) {
+    document.querySelectorAll(".tab").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.mode === m);
+    });
+    document.getElementById("form-numbers").style.display = m === "numbers" ? "" : "none";
+    document.getElementById("form-keys").style.display = m === "keys" ? "" : "none";
+  };
+
+  document.getElementById("dist").addEventListener("change", function () {
+    document.getElementById("sigma-field").style.display = this.value === "normal" ? "" : "none";
+  });
+
+  window.clearAll = async function () {
+    try { await fetch("/api/clear", { method: "POST" }); } catch (e) {}
+    location.reload();
+  };
+
+  // ---------- 生成数字 ----------
+  window.generateNumbers = async function () {
+    var dist = document.getElementById("dist").value;
+    var count = parseInt(document.getElementById("count").value, 10);
+    var lo = parseFloat(document.getElementById("lo").value);
+    var hi = parseFloat(document.getElementById("hi").value);
+    var decimals = parseInt(document.getElementById("decimals").value, 10);
+    var sigma = document.getElementById("sigma").value;
+    sigma = sigma ? parseFloat(sigma) : null;
+
+    if (!count || count < 1) return showMsg("err", "数量无效");
+    if (isNaN(lo) || isNaN(hi) || hi <= lo) return showMsg("err", "上下限无效，上限必须大于下限");
+    if (isNaN(decimals) || decimals < 0) return showMsg("err", "小数位数无效");
+
+    var btn = document.getElementById("btnGenNum");
+    btn.disabled = true; btn.textContent = "读取物理熵源中…";
+    try {
+      var resp = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "numbers", dist: dist, count: count, lo: lo, hi: hi, decimals: decimals, sigma: sigma })
+      });
+      var res = await resp.json();
+      if (!res.ok) { showMsg("err", "生成失败：" + (res.error || "未知错误")); return; }
+      renderNumbers(res);
+      showMsg("ok", "生成完成：" + count + " 个" + dist + "分布数。");
+    } catch (e) { showMsg("err", "请求异常：" + e.message); }
+    finally { btn.disabled = false; btn.textContent = "从物理熵源生成"; }
+  };
+
+  function renderNumbers(res) {
+    document.getElementById("result").style.display = "";
+    document.getElementById("numCharts").style.display = "";
+    document.getElementById("keyResult").style.display = "none";
+    document.getElementById("qualitySection").style.display = "none";
+    document.getElementById("btnXlsx").style.display = "";
+    document.getElementById("btnPng").style.display = "";
+    document.getElementById("btnQq").style.display = "";
+    document.getElementById("btnBin").style.display = "none";
+    var st = res.stats;
+    document.getElementById("statCards").innerHTML = [
+      ["样本数", st.count], ["均值", st.mean], ["标准差", st.std],
+      ["中位数", st.median], ["最小值", st.min], ["最大值", st.max]
+    ].map(function (p) {
+      return '<div class="stat"><div class="k">' + p[0] + '</div><div class="v">' + p[1] + '</div></div>';
+    }).join("");
+    document.getElementById("entropyInfo").textContent =
+      "本次消耗物理熵 " + (res.entropy_bytes / 1024).toFixed(2) + " KB（" + res.entropy_bytes + " 字节），全部来自启熵量子硬件，未使用软件伪随机数。";
+    drawHistogram(res.values, st);
+    drawQQ(res.values);
+  }
+
+  function drawHistogram(vals, st) {
+    var el = document.getElementById("histChart");
+    el.innerHTML = "";
+    if (!echartsOk) { el.innerHTML = '<div class="loading">ECharts 未加载</div>'; return; }
+    var bins = Math.min(30, Math.max(10, Math.floor(vals.length / 4)));
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    var w = (mx - mn) / bins || 1;
+    var counts = new Array(bins).fill(0);
+    vals.forEach(function (v) { counts[Math.min(bins - 1, Math.floor((v - mn) / w))]++; });
+    var n = vals.length, density = counts.map(function (c) { return +(c / (n * w)).toFixed(4); });
+    var labels = [];
+    for (var i = 0; i < bins; i++) labels.push((mn + w * i).toFixed(2));
+    var curve = [];
+    for (var j = 0; j <= 80; j++) {
+      var x = mn + (mx - mn) * j / 80;
+      var z = (x - st.mean) / st.std;
+      var y = Math.exp(-0.5 * z * z) / (st.std * Math.sqrt(2 * Math.PI));
+      curve.push([+x.toFixed(4), +y.toFixed(6)]);
+    }
+    histChart = echarts.init(el);
+    histChart.setOption({
+      backgroundColor: "transparent",
+      tooltip: { trigger: "axis", confine: true },
+      grid: { left: 44, right: 16, top: 20, bottom: 30 },
+      xAxis: { type: "category", data: labels, axisLabel: { fontSize: 10, color: "#6B7280" } },
+      yAxis: { type: "value", name: "密度", axisLabel: { fontSize: 10, color: "#6B7280" } },
+      series: [
+        { name: "样本", type: "bar", data: density, itemStyle: { color: "#8BC8EA", borderRadius: [3, 3, 0, 0] }, barCategoryGap: "10%" },
+        { name: "正态拟合", type: "line", data: curve, smooth: true, symbol: "none", lineStyle: { color: "#1A1B1C", width: 1.8 }, z: 5 }
+      ]
+    });
+    window.addEventListener("resize", function () { histChart && histChart.resize(); });
+  }
+
+  function drawQQ(vals) {
+    var el = document.getElementById("qqChart");
+    el.innerHTML = "";
+    if (!echartsOk) { el.innerHTML = '<div class="loading">ECharts 未加载</div>'; return; }
+    var n = vals.length;
+    var srt = vals.slice().sort(function (a, b) { return a - b; });
+    var theory = srt.map(function (_, i) { return +invNorm((i + 0.5) / n).toFixed(4); });
+    var data = theory.map(function (t, i) { return [t, srt[i]]; });
+    var mt = theory.reduce(function (a, b) { return a + b; }, 0) / n;
+    var ms = srt.reduce(function (a, b) { return a + b; }, 0) / n;
+    var stt = 0, sss = 0, sts = 0;
+    theory.forEach(function (t, i) { stt += (t - mt) * (t - mt); sss += (srt[i] - ms) * (srt[i] - ms); sts += (t - mt) * (srt[i] - ms); });
+    var r2 = (sts * sts / (stt * sss)) || 0;
+    var slope = sts / stt, intercept = ms - slope * mt;
+    var lineX = [theory[0], theory[n - 1]];
+    var lineY = [slope * lineX[0] + intercept, slope * lineX[1] + intercept];
+    qqChart = echarts.init(el);
+    qqChart.setOption({
+      backgroundColor: "transparent",
+      tooltip: { confine: true, formatter: function (p) { return "理论 " + p.value[0] + "<br>样本 " + p.value[1]; } },
+      grid: { left: 44, right: 16, top: 24, bottom: 30 },
+      xAxis: { type: "value", name: "理论分位数", axisLabel: { fontSize: 10, color: "#6B7280" } },
+      yAxis: { type: "value", name: "样本分位数", axisLabel: { fontSize: 10, color: "#6B7280" } },
+      series: [
+        { name: "样本点", type: "scatter", data: data, symbolSize: 5, itemStyle: { color: "#94D4D0", opacity: 0.85 } },
+        { name: "拟合线 R²=" + r2.toFixed(4), type: "line", data: lineX.map(function (x, i) { return [x, lineY[i]]; }), symbol: "none", lineStyle: { color: "#1A1B1C", width: 1.4 }, z: 5 }
+      ]
+    });
+    window.addEventListener("resize", function () { qqChart && qqChart.resize(); });
+  }
+
+  function invNorm(p) {
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    var a = [-39.6968302866538, 220.946098424521, -275.928510446969, 138.357751867269, -30.6647980661472, 2.50662827745924];
+    var b = [-54.4760987982241, 161.585836858041, -155.698979859887, 66.8013118877197, -13.2806815528857];
+    var c = [-0.00778489400243029, -0.322396458041136, -2.40075827716184, -2.54973253934373, 4.37466414146497, 2.93816398269878];
+    var d = [0.00778469570904146, 0.32246712907004, 2.445134137143, 3.75440866190742];
+    var q = p - 0.5, r, x;
+    if (Math.abs(q) <= 0.02425) {
+      r = q * q;
+      x = q * (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5]) / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+    } else {
+      r = p; if (q > 0) r = 1 - p;
+      r = Math.sqrt(-Math.log(r));
+      x = (((((c[0]*r+c[1])*r+c[2])*r+c[3])*r+c[4])*r+c[5]) / ((((d[0]*r+d[1])*r+d[2])*r+d[3])*r+1);
+      if (q < 0) x = -x;
+    }
+    return x;
+  }
+
+  // ---------- 生成密钥 ----------
+  window.generateKeys = async function () {
+    var count = parseInt(document.getElementById("key-count").value, 10);
+    var nbytes = parseInt(document.getElementById("key-bytes").value, 10);
+    if (!count || count < 1) return showMsg("err", "密钥数量无效");
+    if (!nbytes || nbytes < 1) return showMsg("err", "密钥长度无效");
+
+    var btn = document.getElementById("btnGenKey");
+    btn.disabled = true; btn.textContent = "读取物理熵源中…";
+    try {
+      var resp = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "keys", count: count, key_bytes: nbytes })
+      });
+      var res = await resp.json();
+      if (!res.ok) {
+        document.getElementById("result").style.display = "";
+        document.getElementById("numCharts").style.display = "none";
+        document.getElementById("keyResult").style.display = "none";
+        document.getElementById("statCards").innerHTML = "";
+        document.getElementById("entropyInfo").textContent = "";
+        if (res.quality) renderQuality(res.quality);
+        showMsg("err", res.error || "随机数质量检测未通过，已停止生成。");
+        return;
+      }
+      renderKeys(res);
+      showMsg("ok", "生成完成：" + count + " 个 " + (nbytes * 8) + " 位 HEX 密钥，四项检测全部通过。");
+    } catch (e) { showMsg("err", "请求异常：" + e.message); }
+    finally { btn.disabled = false; btn.textContent = "从物理熵源生成"; }
+  };
+
+  function renderQuality(qa) {
+    var sec = document.getElementById("qualitySection");
+    sec.style.display = "";
+    var cards = document.getElementById("qualityCards");
+    var order = ["monobit", "runs", "chi2", "entropy"];
+    cards.innerHTML = order.map(function (k) {
+      var t = qa.tests[k];
+      var ok = t.passed;
+      var bg = ok ? "rgba(82,196,26,0.12)" : "rgba(214,69,80,0.12)";
+      var bd = ok ? "rgba(82,196,26,0.45)" : "rgba(214,69,80,0.55)";
+      var val;
+      if (t.skipped) val = t.note || "样本不足，跳过";
+      else if (t.p_value !== undefined) val = "p=" + t.p_value;
+      else if (t.value !== undefined) val = t.value + " " + (t.unit || "");
+      else val = "";
+      return '<div class="stat" style="background:' + bg + ';border:1px solid ' + bd + ';">'
+        + '<div class="k">' + t.name + '</div>'
+        + '<div class="v" style="font-size:14px;color:' + (ok ? '#3D8B14' : 'var(--err)') + ';">'
+        + (t.skipped ? "跳过" : (ok ? "通过" : "不通过")) + '</div>'
+        + '<div style="font-size:11px;color:var(--sub);margin-top:2px;">' + val + '</div>'
+        + '</div>';
+    }).join("");
+  }
+
+  function renderKeys(res) {
+    document.getElementById("result").style.display = "";
+    document.getElementById("numCharts").style.display = "none";
+    document.getElementById("keyResult").style.display = "";
+    document.getElementById("btnXlsx").style.display = "none";
+    document.getElementById("btnPng").style.display = "none";
+    document.getElementById("btnQq").style.display = "none";
+    document.getElementById("btnBin").style.display = "";
+    renderQuality(res.quality);
+    document.getElementById("statCards").innerHTML = [
+      ["密钥数量", res.keys.length],
+      ["单密钥长度", res.key_bytes + " 字节"],
+      ["HEX 字符", res.hex_chars + " 字符"],
+      ["总熵量", (res.entropy_bytes / 1024).toFixed(2) + " KB"]
+    ].map(function (p) {
+      return '<div class="stat"><div class="k">' + p[0] + '</div><div class="v">' + p[1] + '</div></div>';
+    }).join("");
+    document.getElementById("entropyInfo").textContent =
+      "密钥字节全部直接取自启熵量子硬件物理熵源，未使用任何软件伪随机数。";
+    var list = document.getElementById("keyList");
+    list.innerHTML = res.keys.map(function (k, i) {
+      return '<div class="key-row"><span style="word-break:break-all;">' + (i + 1) + '. ' + k + '</span>'
+        + '<button class="copy" data-k="' + k + '" onclick="copyKey(this)">复制</button></div>';
+    }).join("");
+  }
+
+  window.copyKey = function (btn) {
+    var k = btn.dataset.k;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(k).then(function () { btn.textContent = "已复制"; setTimeout(function () { btn.textContent = "复制"; }, 1500); });
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = k; document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      btn.textContent = "已复制"; setTimeout(function () { btn.textContent = "复制"; }, 1500);
+    }
+  };
+
+  // ---------- 导出 ----------
+  window.doExport = function (fmt) {
+    window.location.href = "/api/export?fmt=" + fmt;
+  };
+})();
+</script>
+</body>
+</html>

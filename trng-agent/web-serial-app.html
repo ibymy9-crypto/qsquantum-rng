@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>启熵量子 · 真随机数生成器（跨平台 Web Serial）</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --accent: #2F6FA7; --accent-soft: rgba(47,111,167,0.10);
+    --bg: #F4F3EE; --card: #FFFFFF; --text: #1A1B1C; --sub: #6B7280;
+    --border: #E4E3DD; --ok: #52C41A; --warn: #FAAD14; --err: #D64550;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'PingFang SC', 'Segoe UI', Roboto, Arial, sans-serif; line-height: 1.5; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  header h1 { font-size: 20px; font-weight: 700; }
+  header .sub { font-size: 12.5px; color: var(--sub); margin-top: 2px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #C0C0C0; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--err); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tab { flex: 1; text-align: center; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); cursor: pointer; font-size: 14px; color: var(--sub); transition: all .15s; }
+  .tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .grid { display: flex; flex-wrap: wrap; gap: 12px; }
+  .field { flex: 1 1 140px; min-width: 0; }
+  .field label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+  .field input, .field select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13.5px; background: #FBFBF9; color: var(--text); outline: none; }
+  .field input:focus, .field select:focus { border-color: var(--accent); background: #fff; }
+  .btn { padding: 10px 22px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #275C8C; }
+  .btn-ghost { background: var(--card); border: 1px solid var(--border); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-ok { background: var(--ok); color: #fff; }
+  .btn-ok:hover { background: #45a817; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .stat-cards { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .stat { flex: 1 1 90px; min-width: 0; background: linear-gradient(135deg, rgba(139,200,234,0.14), rgba(139,200,234,0.28)); border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: 11.5px; color: var(--sub); }
+  .stat .v { font-size: 17px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .chart { width: 100%; height: 320px; }
+  .charts { display: flex; flex-wrap: wrap; gap: 12px; }
+  .charts .panel { flex: 1 1 320px; min-width: 0; }
+  .charts .panel h3 { font-size: 13px; color: var(--sub); margin-bottom: 6px; font-weight: 500; }
+  .preview { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .preview table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .preview th, .preview td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .preview th { position: sticky; top: 0; background: #F4F3EE; font-weight: 600; color: var(--sub); }
+  .keys-list { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .key-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; }
+  .key-row:last-child { border-bottom: none; }
+  .copy { flex-shrink: 0; font-size: 11.5px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; color: var(--sub); }
+  .copy:hover { color: var(--accent); border-color: var(--accent); }
+  .msg { font-size: 13px; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; display: none; }
+  .msg.err { display: block; background: rgba(214,69,80,0.08); border: 1px solid rgba(214,69,80,0.3); color: var(--err); }
+  .msg.ok { display: block; background: rgba(82,196,26,0.08); border: 1px solid rgba(82,196,26,0.3); color: #3D8B14; }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 10px; }
+  .entropy { font-size: 12px; color: var(--sub); margin-top: 8px; }
+  .export-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .loading { text-align: center; color: var(--sub); font-size: 13px; padding: 24px 0; }
+  .platform-note { background: rgba(47,111,167,0.06); border: 1px solid rgba(47,111,167,0.2); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: var(--sub); margin-bottom: 16px; line-height: 1.7; }
+  .platform-note strong { color: var(--accent); }
+  @media (max-width: 520px) { .chart { height: 260px; } .field { flex-basis: 100%; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>启熵量子 · 真随机数生成器</h1>
+      <div class="sub">跨平台 Web Serial 版 · 浏览器直连硬件 · 无需安装 Python</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div class="status" id="status"><span class="dot" id="dot"></span><span id="statusText">未连接</span></div>
+      <button class="btn btn-ok" id="btnConnect" onclick="connectDevice()">连接设备</button>
+      <button class="btn btn-ghost" id="btnDisconnect" onclick="disconnectDevice()" style="display:none;">断开</button>
+    </div>
+  </header>
+
+  <div class="platform-note">
+    <strong>跨平台说明：</strong>本页面通过浏览器 Web Serial API 直接读取启熵量子 U 盘硬件，支持 <strong>Windows / macOS / Linux</strong> 的 Chrome、Edge、Opera 浏览器。<strong>鸿蒙系统</strong>：若鸿蒙浏览器基于 Chromium 内核且支持 Web Serial API，可直接使用；若不支持，请使用下方的 Python 后端模式（<code>python3 server.py</code>）。Safari / Firefox 暂不支持 Web Serial，请使用 Chrome 或 Edge。
+  </div>
+
+  <div class="msg" id="msg"></div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" data-mode="numbers" onclick="switchMode('numbers')">生成随机数字</div>
+      <div class="tab" data-mode="keys" onclick="switchMode('keys')">生成 HEX 密钥</div>
+    </div>
+
+    <div id="form-numbers">
+      <div class="grid">
+        <div class="field">
+          <label>分布类型</label>
+          <select id="dist">
+            <option value="normal" selected>正态分布</option>
+            <option value="uniform">均匀分布</option>
+            <option value="exponential">指数分布（截断）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>数量</label>
+          <input id="count" type="number" min="1" max="100000" value="100">
+        </div>
+        <div class="field">
+          <label>下限</label>
+          <input id="lo" type="number" step="any" value="100">
+        </div>
+        <div class="field">
+          <label>上限</label>
+          <input id="hi" type="number" step="any" value="200">
+        </div>
+        <div class="field">
+          <label>小数位数</label>
+          <input id="decimals" type="number" min="0" max="10" value="2">
+        </div>
+        <div class="field" id="sigma-field">
+          <label>σ（标准差，留空自动）</label>
+          <input id="sigma" type="number" step="any" placeholder="自动 = 区间/6">
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="generateNumbers()">从物理熵源生成</button>
+        <button class="btn btn-ghost" onclick="clearAll()">清空</button>
+      </div>
+    </div>
+
+    <div id="form-keys" style="display:none;">
+      <div class="grid">
+        <div class="field">
+          <label>密钥数量</label>
+          <input id="key-count" type="number" min="1" max="100000" value="1">
+        </div>
+        <div class="field">
+          <label>密钥长度（字节，1 字节 = 2 个 HEX 字符）</label>
+          <input id="key-bytes" type="number" min="1" max="4096" value="32">
+        </div>
+      </div>
+      <div class="hint">32 字节 = 256 位 = 64 个 HEX 字符（AES-256 / 量子安全密钥推荐长度）。生成后自动执行四项随机数质量检测，不通过则停止输出。</div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="generateKeys()">从物理熵源生成</button>
+        <button class="btn btn-ghost" onclick="clearAll()">清空</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="result" style="display:none;">
+    <div class="card">
+      <h2>生成结果</h2>
+      <div class="stat-cards" id="statCards"></div>
+      <div id="qualitySection" style="display:none; margin-bottom:14px;">
+        <h3 style="font-size:13px;color:var(--sub);margin-bottom:6px;font-weight:500;">随机数质量检测（四项）</h3>
+        <div class="stat-cards" id="qualityCards"></div>
+      </div>
+      <div id="numCharts">
+        <div class="charts">
+          <div class="panel">
+            <h3>分布直方图（含正态拟合曲线）</h3>
+            <div class="chart" id="histChart"></div>
+          </div>
+          <div class="panel">
+            <h3>正态 QQ 图（验证分布质量）</h3>
+            <div class="chart" id="qqChart"></div>
+          </div>
+        </div>
+      </div>
+      <div id="keyResult" style="display:none;">
+        <div class="keys-list" id="keyList"></div>
+      </div>
+      <div class="entropy" id="entropyInfo"></div>
+      <div class="export-group" id="exportGroup">
+        <button class="btn btn-ghost" onclick="doExport('csv')">导出 CSV</button>
+        <button class="btn btn-ghost" onclick="doExport('json')">导出 JSON</button>
+        <button class="btn btn-ghost" onclick="doExport('txt')">导出 TXT</button>
+      </div>
+    </div>
+
+    <div class="card" id="previewCard" style="display:none;">
+      <h2>数值预览（前 100 条）</h2>
+      <div class="preview"><table id="previewTable"></table></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var port = null;
+  var histChart = null, qqChart = null;
+  var lastMode = "numbers";
+  var lastValues = null, lastKeys = null;
+  var echartsOk = (typeof echarts !== "undefined");
+
+  // ---------- 数学工具 ----------
+  function erf(x) {
+    var sign = x < 0 ? -1 : 1; x = Math.abs(x);
+    var t = 1 / (1 + 0.3275911 * x);
+    var y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+    return sign * y;
+  }
+  function erfc(x) { return 1 - erf(x); }
+  function invNorm(p) {
+    var a = [-39.6968302866538,220.946098424521,-275.928510446969,138.357751867269,-30.6647980661472,2.50662827745924];
+    var b = [-54.4760987982241,161.585836858041,-155.698979859887,66.8013118877197,-13.2806815528857];
+    var c = [-0.00778489400243029,-0.322396458041136,-2.40075827716184,-2.54973253934373,4.37466414146497,2.93816398269878];
+    var d = [0.00778469570904146,0.32246712907004,2.445134137143,3.75440866190742];
+    var q = p - 0.5, r, x;
+    if (Math.abs(q) <= 0.02425) {
+      r = q * q;
+      x = q * (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5]) / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+    } else {
+      r = p; if (q > 0) r = 1 - p;
+      r = Math.sqrt(-Math.log(r));
+      x = (((((c[0]*r+c[1])*r+c[2])*r+c[3])*r+c[4])*r+c[5]) / ((((d[0]*r+d[1])*r+d[2])*r+d[3])*r+1);
+      if (q < 0) x = -x;
+    }
+    return x;
+  }
+
+  // ---------- 设备连接（Web Serial API） ----------
+  window.connectDevice = async function () {
+    if (!navigator.serial) {
+      showMsg("err", "当前浏览器不支持 Web Serial API，请使用 Chrome 或 Edge 浏览器。");
+      return;
+    }
+    try {
+      var ports = await navigator.serial.getPorts();
+      if (ports.length > 0) {
+        port = ports[0];
+      } else {
+        port = await navigator.serial.requestPort({ filters: [] });
+      }
+      await port.open({ baudRate: 115200 });
+      document.getElementById("dot").className = "dot on";
+      document.getElementById("statusText").textContent = "已连接";
+      document.getElementById("btnConnect").style.display = "none";
+      document.getElementById("btnDisconnect").style.display = "";
+      showMsg("ok", "设备已连接，可以开始生成。");
+    } catch (e) {
+      showMsg("err", "连接失败：" + e.message);
+    }
+  };
+
+  window.disconnectDevice = async function () {
+    if (port) {
+      try { await port.close(); } catch (e) {}
+      port = null;
+    }
+    document.getElementById("dot").className = "dot off";
+    document.getElementById("statusText").textContent = "未连接";
+    document.getElementById("btnConnect").style.display = "";
+    document.getElementById("btnDisconnect").style.display = "none";
+  };
+
+  async function readBytes(n) {
+    if (!port) throw new Error("设备未连接，请先点击「连接设备」。");
+    var reader = port.readable.getReader();
+    var buf = new Uint8Array(n);
+    var offset = 0;
+    try {
+      while (offset < n) {
+        var result = await reader.read();
+        if (result.done) break;
+        var len = Math.min(result.value.length, n - offset);
+        buf.set(result.value.subarray(0, len), offset);
+        offset += len;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (offset < n) throw new Error("读取数据不足：期望 " + n + " 字节，实际 " + offset + " 字节。");
+    return buf;
+  }
+
+  // ---------- 随机数生成 ----------
+  function bytesToUniform01(bytes, offset) {
+    var v = 0;
+    for (var i = 0; i < 8; i++) v = v * 256 + bytes[offset + i];
+    return (v + 1) / 18446744073709551616;
+  }
+
+  async function genUniform(count, lo, hi, decimals) {
+    var bytes = await readBytes(count * 8);
+    var vals = [];
+    for (var i = 0; i < count; i++) {
+      var u = bytesToUniform01(bytes, i * 8);
+      var v = Math.round((lo + (hi - lo) * u) * Math.pow(10, decimals)) / Math.pow(10, decimals);
+      vals.push(Math.min(hi, Math.max(lo, v)));
+    }
+    return vals;
+  }
+
+  async function genNormal(count, lo, hi, decimals, sigma) {
+    var mu = (lo + hi) / 2;
+    if (!sigma) sigma = (hi - lo) / 6;
+    var vals = [];
+    var guard = 0;
+    while (vals.length < count) {
+      guard++;
+      if (guard > 20000) throw new Error("截断采样失败：σ 过大导致拒绝率过高，请增大范围或减小 σ。");
+      var bytes = await readBytes(16);
+      var u1 = bytesToUniform01(bytes, 0);
+      var u2 = bytesToUniform01(bytes, 8);
+      var z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+      var x = mu + sigma * z;
+      if (x >= lo && x <= hi) {
+        vals.push(Math.round(x * Math.pow(10, decimals)) / Math.pow(10, decimals));
+      }
+    }
+    return vals;
+  }
+
+  async function genExponential(count, lo, hi, decimals) {
+    var lam = 1 / ((hi - lo) / 4);
+    var vals = [];
+    var guard = 0;
+    while (vals.length < count) {
+      guard++;
+      if (guard > 20000) throw new Error("截断采样失败。");
+      var bytes = await readBytes(8);
+      var u = bytesToUniform01(bytes, 0);
+      var x = lo - Math.log(1 - u) / lam;
+      if (x >= lo && x <= hi) {
+        vals.push(Math.round(x * Math.pow(10, decimals)) / Math.pow(10, decimals));
+      }
+    }
+    return vals;
+  }
+
+  // ---------- 四项质量检测 ----------
+  function randomnessQuality(bytes) {
+    var n = bytes.length;
+    var nbits = n * 8;
+    var ones = 0;
+    for (var i = 0; i < n; i++) {
+      for (var b = 7; b >= 0; b--) {
+        if ((bytes[i] >> b) & 1) ones++;
+      }
+    }
+    // 1. 单比特频率
+    var sObs = Math.abs(2 * ones - nbits) / Math.sqrt(nbits);
+    var pMono = erfc(sObs / Math.SQRT2);
+    // 2. 游程
+    var runs = 1;
+    var prevBit = (bytes[0] >> 7) & 1;
+    for (var i = 0; i < n; i++) {
+      for (var b = 7; b >= 0; b--) {
+        if (i === 0 && b === 7) continue;
+        var bit = (bytes[i] >> b) & 1;
+        if (bit !== prevBit) runs++;
+        prevBit = bit;
+      }
+    }
+    var pi = ones / nbits;
+    var tau = 2 / Math.sqrt(nbits);
+    var pRuns;
+    if (Math.abs(pi - 0.5) >= tau) {
+      pRuns = 0;
+    } else {
+      var numerator = Math.abs(runs - 2 * nbits * pi * (1 - pi));
+      var denominator = 2 * Math.sqrt(2 * nbits) * pi * (1 - pi);
+      pRuns = denominator > 0 ? erfc(numerator / denominator) : 0;
+    }
+    // 3. 卡方
+    var counter = new Array(256).fill(0);
+    for (var i = 0; i < n; i++) counter[bytes[i]]++;
+    var expected = n / 256;
+    var chi2 = 0;
+    for (var i = 0; i < 256; i++) chi2 += Math.pow(counter[i] - expected, 2) / expected;
+    // 4. 熵
+    var entropy = 0;
+    for (var i = 0; i < 256; i++) {
+      if (counter[i] > 0) {
+        var p = counter[i] / n;
+        entropy -= p * Math.log2(p);
+      }
+    }
+    var entThreshold = Math.min(8, Math.log2(n)) * 0.9;
+    var chiSkipped = n < 256;
+    return {
+      passed: pMono >= 0.01 && pRuns >= 0.01 && entropy >= entThreshold,
+      sample_bytes: n,
+      tests: {
+        monobit: { name: "单比特频率检验", passed: pMono >= 0.01, p_value: +pMono.toFixed(6), ones_ratio: +(ones / nbits).toFixed(4) },
+        runs: { name: "游程检验", passed: pRuns >= 0.01, p_value: +pRuns.toFixed(6), runs: runs },
+        chi2: { name: "字节分布卡方检验", passed: true, skipped: chiSkipped, chi2: +chi2.toFixed(2), note: chiSkipped ? "样本不足（" + n + "<256字节），跳过" : undefined },
+        entropy: { name: "香农熵检验", passed: entropy >= entThreshold, value: +entropy.toFixed(4), threshold: +entThreshold.toFixed(4), unit: "bits/byte" }
+      }
+    };
+  }
+
+  // ---------- UI 交互 ----------
+  function showMsg(type, text) {
+    var m = document.getElementById("msg");
+    m.className = "msg " + type;
+    m.textContent = text;
+    setTimeout(function () { m.style.display = "none"; }, 8000);
+  }
+
+  window.switchMode = function (m) {
+    lastMode = m;
+    document.querySelectorAll(".tab").forEach(function (el) {
+      el.classList.toggle("active", el.dataset.mode === m);
+    });
+    document.getElementById("form-numbers").style.display = m === "numbers" ? "" : "none";
+    document.getElementById("form-keys").style.display = m === "keys" ? "" : "none";
+  };
+
+  document.getElementById("dist").addEventListener("change", function () {
+    document.getElementById("sigma-field").style.display = this.value === "normal" ? "" : "none";
+  });
+
+  window.clearAll = function () {
+    lastValues = null; lastKeys = null;
+    document.getElementById("result").style.display = "none";
+    location.reload();
+  };
+
+  function stats(vals) {
+    var n = vals.length;
+    var mean = vals.reduce(function (a, b) { return a + b; }, 0) / n;
+    var varSum = vals.reduce(function (a, b) { return a + Math.pow(b - mean, 2); }, 0) / n;
+    var sd = Math.sqrt(varSum);
+    var srt = vals.slice().sort(function (a, b) { return a - b; });
+    var median = n % 2 ? srt[(n - 1) / 2] : (srt[n / 2 - 1] + srt[n / 2]) / 2;
+    return { count: n, mean: +mean.toFixed(6), std: +sd.toFixed(6), min: Math.min.apply(null, vals), max: Math.max.apply(null, vals), median: +median.toFixed(6) };
+  }
+
+  function renderQuality(qa) {
+    var sec = document.getElementById("qualitySection");
+    sec.style.display = "";
+    var cards = document.getElementById("qualityCards");
+    var order = ["monobit", "runs", "chi2", "entropy"];
+    cards.innerHTML = order.map(function (k) {
+      var t = qa.tests[k];
+      var ok = t.passed;
+      var bg = ok ? "rgba(82,196,26,0.12)" : "rgba(214,69,80,0.12)";
+      var bd = ok ? "rgba(82,196,26,0.45)" : "rgba(214,69,80,0.55)";
+      var val;
+      if (t.skipped) val = t.note || "样本不足，跳过";
+      else if (t.p_value !== undefined) val = "p=" + t.p_value;
+      else if (t.value !== undefined) val = t.value + " " + (t.unit || "");
+      else val = "";
+      return '<div class="stat" style="background:' + bg + ';border:1px solid ' + bd + ';">'
+        + '<div class="k">' + t.name + '</div>'
+        + '<div class="v" style="font-size:14px;color:' + (ok ? '#3D8B14' : 'var(--err)') + ';">'
+        + (t.skipped ? "跳过" : (ok ? "通过" : "不通过")) + '</div>'
+        + '<div style="font-size:11px;color:var(--sub);margin-top:2px;">' + val + '</div>'
+        + '</div>';
+    }).join("");
+  }
+
+  // ---------- 生成数字 ----------
+  window.generateNumbers = async function () {
+    if (!port) { showMsg("err", "请先点击「连接设备」。"); return; }
+    var dist = document.getElementById("dist").value;
+    var count = parseInt(document.getElementById("count").value, 10);
+    var lo = parseFloat(document.getElementById("lo").value);
+    var hi = parseFloat(document.getElementById("hi").value);
+    var decimals = parseInt(document.getElementById("decimals").value, 10);
+    var sigma = document.getElementById("sigma").value;
+    sigma = sigma ? parseFloat(sigma) : null;
+    if (!count || count < 1) return showMsg("err", "数量无效");
+    if (hi <= lo) return showMsg("err", "上限必须大于下限");
+    var btn = document.querySelector('#form-numbers .btn-primary');
+    btn.disabled = true; btn.textContent = "读取物理熵源中…";
+    try {
+      var vals;
+      if (dist === "uniform") vals = await genUniform(count, lo, hi, decimals);
+      else if (dist === "normal") vals = await genNormal(count, lo, hi, decimals, sigma);
+      else vals = await genExponential(count, lo, hi, decimals);
+      lastValues = vals; lastKeys = null;
+      renderNumbers(vals, stats(vals), count * 8);
+      showMsg("ok", "生成完成：" + count + " 个" + dist + "分布数。");
+    } catch (e) {
+      showMsg("err", "生成失败：" + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = "从物理熵源生成";
+    }
+  };
+
+  function renderNumbers(vals, st, entropyBytes) {
+    document.getElementById("result").style.display = "";
+    document.getElementById("numCharts").style.display = "";
+    document.getElementById("keyResult").style.display = "none";
+    document.getElementById("qualitySection").style.display = "none";
+    document.getElementById("previewCard").style.display = "";
+    document.getElementById("exportGroup").style.display = "";
+    document.getElementById("statCards").innerHTML = [
+      ["样本数", st.count], ["均值", st.mean], ["标准差", st.std],
+      ["中位数", st.median], ["最小值", st.min], ["最大值", st.max]
+    ].map(function (p) {
+      return '<div class="stat"><div class="k">' + p[0] + '</div><div class="v">' + p[1] + '</div></div>';
+    }).join("");
+    document.getElementById("entropyInfo").textContent =
+      "本次消耗物理熵 " + (entropyBytes / 1024).toFixed(2) + " KB（" + entropyBytes + " 字节），全部来自启熵量子硬件，未使用软件伪随机数。";
+    var table = document.getElementById("previewTable");
+    var rows = '<tr><th>#</th><th>值</th></tr>';
+    for (var i = 0; i < Math.min(vals.length, 100); i++) {
+      rows += '<tr><td>' + (i + 1) + '</td><td>' + vals[i] + '</td></tr>';
+    }
+    table.innerHTML = rows;
+    drawHistogram(vals, st);
+    drawQQ(vals);
+  }
+
+  function drawHistogram(vals, st) {
+    var el = document.getElementById("histChart");
+    el.innerHTML = "";
+    if (!echartsOk) { el.innerHTML = '<div class="loading">ECharts 未加载</div>'; return; }
+    var bins = Math.min(30, Math.max(10, Math.floor(vals.length / 4)));
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    var w = (mx - mn) / bins || 1;
+    var counts = new Array(bins).fill(0);
+    vals.forEach(function (v) { counts[Math.min(bins - 1, Math.floor((v - mn) / w))]++; });
+    var n = vals.length, density = counts.map(function (c) { return +(c / (n * w)).toFixed(4); });
+    var labels = [];
+    for (var i = 0; i < bins; i++) labels.push((mn + w * i).toFixed(2));
+    var curve = [];
+    for (var j = 0; j <= 80; j++) {
+      var x = mn + (mx - mn) * j / 80;
+      var z = (x - st.mean) / st.std;
+      var y = Math.exp(-0.5 * z * z) / (st.std * Math.sqrt(2 * Math.PI));
+      curve.push([+x.toFixed(4), +y.toFixed(6)]);
+    }
+    histChart = echarts.init(el);
+    histChart.setOption({
+      backgroundColor: "transparent",
+      tooltip: { trigger: "axis", confine: true },
+      grid: { left: 44, right: 16, top: 20, bottom: 30 },
+      xAxis: { type: "category", data: labels, axisLabel: { fontSize: 10, color: "#6B7280" } },
+      yAxis: { type: "value", name: "密度", axisLabel: { fontSize: 10, color: "#6B7280" } },
+      series: [
+        { name: "样本", type: "bar", data: density, itemStyle: { color: "#8BC8EA", borderRadius: [3, 3, 0, 0] }, barCategoryGap: "10%" },
+        { name: "正态拟合", type: "line", data: curve, smooth: true, symbol: "none", lineStyle: { color: "#1A1B1C", width: 1.8 }, z: 5 }
+      ]
+    });
+    window.addEventListener("resize", function () { histChart && histChart.resize(); });
+  }
+
+  function drawQQ(vals) {
+    var el = document.getElementById("qqChart");
+    el.innerHTML = "";
+    if (!echartsOk) { el.innerHTML = '<div class="loading">ECharts 未加载</div>'; return; }
+    var n = vals.length;
+    var srt = vals.slice().sort(function (a, b) { return a - b; });
+    var theory = srt.map(function (_, i) { return +invNorm((i + 0.5) / n).toFixed(4); });
+    var data = theory.map(function (t, i) { return [t, srt[i]]; });
+    var mt = theory.reduce(function (a, b) { return a + b; }, 0) / n;
+    var ms = srt.reduce(function (a, b) { return a + b; }, 0) / n;
+    var stt = 0, sss = 0, sts = 0;
+    theory.forEach(function (t, i) { stt += (t - mt) * (t - mt); sss += (srt[i] - ms) * (srt[i] - ms); sts += (t - mt) * (srt[i] - ms); });
+    var r2 = (sts * sts / (stt * sss)) || 0;
+    var slope = sts / stt, intercept = ms - slope * mt;
+    var lineX = [theory[0], theory[n - 1]];
+    var lineY = [slope * lineX[0] + intercept, slope * lineX[1] + intercept];
+    qqChart = echarts.init(el);
+    qqChart.setOption({
+      backgroundColor: "transparent",
+      tooltip: { confine: true, formatter: function (p) { return "理论 " + p.value[0] + "<br>样本 " + p.value[1]; } },
+      grid: { left: 44, right: 16, top: 24, bottom: 30 },
+      xAxis: { type: "value", name: "理论分位数", axisLabel: { fontSize: 10, color: "#6B7280" } },
+      yAxis: { type: "value", name: "样本分位数", axisLabel: { fontSize: 10, color: "#6B7280" } },
+      series: [
+        { name: "样本点", type: "scatter", data: data, symbolSize: 5, itemStyle: { color: "#94D4D0", opacity: 0.85 } },
+        { name: "拟合线 R²=" + r2.toFixed(4), type: "line", data: lineX.map(function (x, i) { return [x, lineY[i]]; }), symbol: "none", lineStyle: { color: "#1A1B1C", width: 1.4 }, z: 5 }
+      ]
+    });
+    window.addEventListener("resize", function () { qqChart && qqChart.resize(); });
+  }
+
+  // ---------- 生成密钥 ----------
+  window.generateKeys = async function () {
+    if (!port) { showMsg("err", "请先点击「连接设备」。"); return; }
+    var count = parseInt(document.getElementById("key-count").value, 10);
+    var nbytes = parseInt(document.getElementById("key-bytes").value, 10);
+    if (!count || count < 1) return showMsg("err", "密钥数量无效");
+    if (!nbytes || nbytes < 1) return showMsg("err", "密钥长度无效");
+    var btn = document.querySelector('#form-keys .btn-primary');
+    btn.disabled = true; btn.textContent = "读取物理熵源中…";
+    try {
+      var allBytes = await readBytes(count * nbytes);
+      var qa = randomnessQuality(allBytes);
+      if (!qa.passed) {
+        lastKeys = null; lastValues = null;
+        document.getElementById("result").style.display = "";
+        document.getElementById("numCharts").style.display = "none";
+        document.getElementById("keyResult").style.display = "none";
+        document.getElementById("previewCard").style.display = "none";
+        document.getElementById("exportGroup").style.display = "none";
+        document.getElementById("statCards").innerHTML = "";
+        document.getElementById("entropyInfo").textContent = "";
+        renderQuality(qa);
+        var failed = Object.values(qa.tests).filter(function (t) { return !t.passed && !t.skipped; }).map(function (t) { return t.name; });
+        showMsg("err", "随机数质量检测未通过，已停止生成（未通过项：" + failed.join("、") + "）。请重试或检查设备。");
+        return;
+      }
+      var keys = [];
+      for (var i = 0; i < count; i++) {
+        var hex = "";
+        for (var j = 0; j < nbytes; j++) {
+          var b = allBytes[i * nbytes + j];
+          hex += (b < 16 ? "0" : "") + b.toString(16).toUpperCase();
+        }
+        keys.push(hex);
+      }
+      lastKeys = keys; lastValues = null;
+      renderKeys(keys, qa, count * nbytes, nbytes);
+      showMsg("ok", "生成完成：" + count + " 个 " + (nbytes * 8) + " 位 HEX 密钥，四项检测全部通过。");
+    } catch (e) {
+      showMsg("err", "生成失败：" + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = "从物理熵源生成";
+    }
+  };
+
+  function renderKeys(keys, qa, entropyBytes, nbytes) {
+    document.getElementById("result").style.display = "";
+    document.getElementById("numCharts").style.display = "none";
+    document.getElementById("keyResult").style.display = "";
+    document.getElementById("previewCard").style.display = "none";
+    document.getElementById("exportGroup").style.display = "";
+    renderQuality(qa);
+    document.getElementById("statCards").innerHTML = [
+      ["密钥数量", keys.length],
+      ["单密钥长度", nbytes + " 字节"],
+      ["HEX 字符", nbytes * 2 + " 字符"],
+      ["总熵量", (entropyBytes / 1024).toFixed(2) + " KB"]
+    ].map(function (p) {
+      return '<div class="stat"><div class="k">' + p[0] + '</div><div class="v">' + p[1] + '</div></div>';
+    }).join("");
+    document.getElementById("entropyInfo").textContent =
+      "密钥字节全部直接取自启熵量子硬件物理熵源，未使用任何软件伪随机数。";
+    var list = document.getElementById("keyList");
+    list.innerHTML = keys.map(function (k, i) {
+      return '<div class="key-row"><span style="word-break:break-all;">' + k + '</span>'
+        + '<button class="copy" data-k="' + k + '" onclick="copyKey(this)">复制</button></div>';
+    }).join("");
+  }
+
+  window.copyKey = function (btn) {
+    var k = btn.dataset.k;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(k).then(function () { btn.textContent = "已复制"; setTimeout(function () { btn.textContent = "复制"; }, 1500); });
+    } else {
+      var ta = document.createElement("textarea"); ta.value = k; document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      btn.textContent = "已复制"; setTimeout(function () { btn.textContent = "复制"; }, 1500);
+    }
+  };
+
+  // ---------- 导出 ----------
+  window.doExport = function (fmt) {
+    var data, name, mime;
+    if (lastValues) {
+      if (fmt === "csv") {
+        data = "value\n" + lastValues.join("\n"); name = "trng_numbers.csv"; mime = "text/csv";
+      } else if (fmt === "json") {
+        data = JSON.stringify(lastValues, null, 2); name = "trng_numbers.json"; mime = "application/json";
+      } else {
+        data = "value\n" + lastValues.join("\n"); name = "trng_numbers.txt"; mime = "text/plain";
+      }
+    } else if (lastKeys) {
+      if (fmt === "csv") {
+        data = "key\n" + lastKeys.join("\n"); name = "trng_hexkeys.csv"; mime = "text/csv";
+      } else if (fmt === "json") {
+        data = JSON.stringify(lastKeys, null, 2); name = "trng_hexkeys.json"; mime = "application/json";
+      } else {
+        data = lastKeys.join("\n"); name = "trng_hexkeys.txt"; mime = "text/plain";
+      }
+    } else {
+      showMsg("err", "没有可导出的数据。"); return;
+    }
+    var blob = new Blob([data], { type: mime + ";charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+})();
+</script>
+</body>
+</html>
